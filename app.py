@@ -4,12 +4,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
+import requests
+import io
 
 st.set_page_config(page_title="Customer Churn Dashboard", layout="wide")
 
-model = joblib.load('/content/drive/MyDrive/churn_model.pkl')
-model_columns = joblib.load('/content/drive/MyDrive/model_columns.pkl')
-df = pd.read_csv('/content/drive/MyDrive/customer_churn_cleaned.csv')
+@st.cache_resource
+def load_model():
+    url = "https://raw.githubusercontent.com/hiteshisingla11-png/Customer-churn-analysis/main/churn_model.pkl"
+    r = requests.get(url)
+    return joblib.load(io.BytesIO(r.content))
+
+@st.cache_data
+def load_data():
+    url = "https://raw.githubusercontent.com/hiteshisingla11-png/Customer-churn-analysis/main/customer_churn_cleaned.csv"
+    return pd.read_csv(url)
+
+@st.cache_data
+def load_columns():
+    url = "https://raw.githubusercontent.com/hiteshisingla11-png/Customer-churn-analysis/main/model_columns.pkl"
+    r = requests.get(url)
+    return joblib.load(io.BytesIO(r.content))
+
+model = load_model()
+df = load_data()
+model_columns = load_columns()
 
 st.title("📊 Customer Churn Analytics Dashboard")
 
@@ -32,7 +51,6 @@ with tab1:
         ax.set_xlabel("Predicted churn probability")
         ax.set_ylabel("Number of customers")
         st.pyplot(fig)
-
     with col2:
         st.subheader("Age vs Churn")
         fig, ax = plt.subplots()
@@ -41,7 +59,6 @@ with tab1:
 
 with tab2:
     st.subheader("Enter a customer's details to predict their churn risk")
-
     col1, col2, col3 = st.columns(3)
     with col1:
         age = st.slider("Age", 18, 92, 35)
@@ -88,24 +105,21 @@ with tab3:
         'Feature': model_columns,
         'Importance': model.feature_importances_
     }).sort_values('Importance', ascending=False).head(10)
-
     fig, ax = plt.subplots(figsize=(8,5))
     ax.barh(importance_df['Feature'][::-1], importance_df['Importance'][::-1], color='#1D9E75')
     st.pyplot(fig)
 
 with tab4:
     st.subheader("See how changing engagement affects churn risk")
-    st.write("Pick a base customer profile, then adjust their activity/products to see risk change live.")
-
     base_age = st.slider("Base Age", 18, 92, 40, key="sim_age")
-
     scenarios = []
     for active_state in [0, 1]:
         for products in range(1, 5):
             row = {
                 'CreditScore': 650, 'Age': base_age, 'Tenure': 5, 'Balance': 50000,
                 'NumOfProducts': products, 'HasCrCard': 1, 'IsActiveMember': active_state,
-                'EstimatedSalary': 100000, 'Geography_Germany': 0, 'Geography_Spain': 0, 'Gender_Male': 1
+                'EstimatedSalary': 100000, 'Geography_Germany': 0,
+                'Geography_Spain': 0, 'Gender_Male': 1
             }
             row['BalanceSalaryRatio'] = row['Balance'] / (row['EstimatedSalary']+1)
             row['ProductDensity'] = row['NumOfProducts'] / (row['Tenure']+1)
@@ -114,10 +128,9 @@ with tab4:
             row_df = pd.DataFrame([row])[model_columns]
             prob = model.predict_proba(row_df)[0][1]
             scenarios.append({'Products': products, 'Active': 'Yes' if active_state else 'No', 'Risk': prob})
-
     sim_df = pd.DataFrame(scenarios)
     fig, ax = plt.subplots()
     sns.lineplot(data=sim_df, x='Products', y='Risk', hue='Active', marker='o', ax=ax)
     ax.set_ylabel("Predicted churn probability")
     st.pyplot(fig)
-    st.caption("This shows how churn risk changes as a customer adopts more products, comparing active vs inactive members.")
+    st.caption("This shows how churn risk changes as a customer adopts more products.")
